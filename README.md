@@ -26,9 +26,6 @@
 ---
 
 ## 🚀 About the Project
-
-In the era of the Internet of Things (IoT) and edge computing, the demand for deploying intelligent algorithms on resource-constrained devices has surged. Traditional cloud-based approaches for tasks such as Intrusion Detection Systems (IDS) often suffer from latency, bandwidth limitations, and privacy concerns. 
-
 This project presents the design and implementation of a lightweight, **RISC-V-based Edge AI processor** capable of executing deep learning inference for network security applications. The primary objective is to validate the feasibility of running a complex, floating-point-heavy Multi-Layer Perceptron (MLP) on a soft-core processor within an FPGA environment.
 
 **Key Features:**
