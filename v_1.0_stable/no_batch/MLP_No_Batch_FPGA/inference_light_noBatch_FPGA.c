@@ -49,7 +49,7 @@ void dense_affine(const float *x, int in_dim,
 
 // We prefered using TensorFlow/Keras layout for weights, but
 // some users might have transposed weights. Support both. This 
-// has to be design by your Python export script.
+// has to be design according your Python export script.
 
     #if USE_KERAS_LAYOUT
     // Keras Layout
@@ -77,7 +77,8 @@ void dense_affine(const float *x, int in_dim,
 int model_infer(const float *x)
 {
     // Define buffers locally
-    // Note: If you get stack overflow, move these outside the function.
+    // Note: In this design we did not get stack overflow.
+    // If you get stack overflow, move these outside the function.
     float z0[L0_OUT];
     float z1[L1_OUT];
     float z2[L2_OUT];
@@ -129,7 +130,8 @@ int main() {
 
     // Hardcoded Test Vector (To verify boot/logic without UART)
     // This ensures your FPGA is alive immediately after bitstream load.
-    // We used for debugging. Its neither necessary nor useful. But I keep it for sake of easy explanation of debug process.
+    // We used for debugging. Its neither necessary nor useful. But I keep it for sake of 
+    // easy illustration of debugging process.
     float test_input[INPUT_DIM] = { 
         0.000000f, 1.000000f, 0.000000f, 0.000000f, 0.000000f, 
         0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 
@@ -148,8 +150,6 @@ int main() {
         -1.412415f, -0.016930f, -0.374560f, 0.734343f, -0.954389f, -1.071933f, -0.121485f, -0.480197f, 
         -0.289103f, -0.639532f, -0.624871f, 2.874410f, 2.753914f 
     };
-    // Note: The specific values don't matter for the boot test, 
-    // just that it runs without crashing.
     
     // Run self-test
     int boot_result = model_infer(test_input);
@@ -200,7 +200,6 @@ void fast_irq0_handler()
     rx_var.bytes[count % 4] = rx_byte;
 
     //  Store to Array 
-    
     input_array[count / 4] = rx_var.f;
 
     // Increment & Check

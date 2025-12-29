@@ -3,7 +3,7 @@
 #include <string.h>
 #include <math.h>
 
-// Include the NEW folded header
+// Include the folded header
 #include "MLP_weights_folded.h" 
 
 // ==============================================================================
@@ -24,13 +24,12 @@
 // MATH FUNCTIONS (HARDWARE APPROXIMATIONS)
 // ==============================================================================
 
-// We NO LONGER need sqrtf_approx! BN is gone!
 
 float expf_hard(float x) {
 #if USE_STD_MATH
     return expf(x);
 #else
-    // Your Taylor series approx
+    // Taylor series approx
     float result = 1.0f;
     float term = 1.0f;
     for (int n = 1; n <= 50; n++) {
@@ -52,7 +51,6 @@ void dense_affine(const float *x, int in_dim,
     for (int o = 0; o < out_dim; ++o) {
         float acc = b[o];
         for (int i = 0; i < in_dim; ++i) {
-            // Note: Assuming Keras Layout (w[i * out_dim + o]) based on your previous code
             acc += x[i] * w[i * out_dim + o];
         }
         y[o] = acc;
@@ -88,7 +86,6 @@ int model_infer(const float *x) {
     float out_probs[L4_OUT];
 
     // --- Layer 0: Folded Dense + ReLU ---
-    // Notice: bn_infer is GONE.
     dense_affine(x, INPUT_DIM, layer0_weights, layer0_biases, L0_OUT, z0);
     for (int i = 0; i < L0_OUT; ++i) z0[i] = relu(z0[i]);
 

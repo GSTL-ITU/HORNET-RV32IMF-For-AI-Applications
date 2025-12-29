@@ -3,7 +3,7 @@
 #define USE_KERAS_LAYOUT 1
 #endif
 
-// CRITICAL: Include the NEW folded header. 
+// Include the folded header. 
 // This file must be in the same directory.
 #include "MLP_weights_folded.h" 
 
@@ -17,10 +17,10 @@
 #define L3_OUT    32  
 #define L4_OUT    5   
 
-// Helper: Simple ReLU
+// Simple ReLU
 float relu(float x){ return x > 0.0f ? x : 0.0f; }
 
-// Helper: Matrix Multiplication (Affine)
+// Matrix Multiplication (Affine)
 void dense_affine(const float *x, int in_dim,
                   const float *w, const float *b,
                   int out_dim, float *y)
@@ -96,7 +96,8 @@ int model_infer(const float *x)
 // MAIN
 // -------------------------------------------------------------
 int main() {
-    // Hardcoded input for Class 0 (from your previous snippet)
+    // Hardcoded input for Class 0, this is for debugging. I have tried for all classes. You
+    // can change this input to test other classes as needed. Check the weights header. 
     volatile float input[INPUT_DIM] = { 
         0.000000f, 1.000000f, 0.000000f, 0.000000f, 0.000000f, 
         0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 

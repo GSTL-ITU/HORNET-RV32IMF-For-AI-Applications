@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import sys
 from sklearn import metrics
@@ -45,7 +44,7 @@ def print_comparison_report(y_true, y_pred, title):
     print("Detailed Metrics (Precision, Recall, F1-Score):")
     print(report)
     
-    # Also show a confusion matrix, which is very useful
+    # Also show a confusion matrix
     print("Confusion Matrix:")
     print(metrics.confusion_matrix(y_true, y_pred, labels=labels))
     print("\n" + "-"*80 + "\n")
@@ -93,23 +92,21 @@ def main():
 
     # --- Run the 3 comparisons ---
 
-    # 1. Ground Truth vs. C-Local (Is your C code correct?)
+    # 1. Ground Truth vs. C-Local 
     print_comparison_report(
         y_true, 
         y_c_local, 
         "Report 1: Ground Truth (labels.txt) vs. C-Local (label_results.txt)"
     )
 
-    # 2. Ground Truth vs. FPGA-UART (Is your final hardware correct?)
+    # 2. Ground Truth vs. FPGA-UART
     print_comparison_report(
         y_true, 
         y_fpga_uart, 
         "Report 2: Ground Truth (labels.txt) vs. FPGA-UART (FPGA_results.txt)"
     )
 
-    # 3. C-Local vs. FPGA-UART (Are your C code and FPGA hardware *consistent*?)
-    # This is the most important for you. 
-    # A 100% accuracy here means your hardware perfectly matches your C-code simulation.
+    # 3. C-Local vs. FPGA-UART
     print_comparison_report(
         y_c_local, 
         y_fpga_uart, 
@@ -119,5 +116,5 @@ def main():
 if __name__ == "__main__":
     main()
 
-
+# To run the comparison, use the command in terminal:
 # python compare_all.py --truth labels.txt --c-local label_results.txt --fpga-uart FPGA_results.txt    
