@@ -1,4 +1,3 @@
-#!/usr/b/in/env python3
 import argparse
 import numpy as np
 import serial
@@ -75,6 +74,7 @@ def read_one_prediction(ser: serial.Serial, timeout_s=3.0):
         ser.timeout = old_timeout
 
 def main():
+    # These arguments allow user to specify serial port, baudrate, input files, etc.
     ap = argparse.ArgumentParser(
         description="Send feature vectors from a text file over UART and check predictions."
     )
@@ -86,7 +86,6 @@ def main():
     ap.add_argument("--inputs", required=True, help="Path to inputs.txt file")
     ap.add_argument("--labels", required=True, help="Path to labels.txt file (ground truth)")
     
-    # --- *** NEW ARGUMENT *** ---
     ap.add_argument("--output", help="Optional: File to save the FPGA's predictions to (e.g., label_results.txt)")
     
     # --- Model & Send Args ---
@@ -164,7 +163,7 @@ def main():
                     output_file_handle.write("-1\n") # Write -1 for timeout
                 else:
                     output_file_handle.write(f"{pred}\n")
-            # ---
+            
 
             if pred is None:
                 wrong += 1

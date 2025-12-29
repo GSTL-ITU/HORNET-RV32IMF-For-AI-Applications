@@ -116,5 +116,5 @@ def main():
 if __name__ == "__main__":
     main()
 
-# To run the comparison, use the command in terminal:
+# To run the comparison, use the command in terminal: 
 # python compare_all.py --truth labels.txt --c-local label_results.txt --fpga-uart FPGA_results.txt    

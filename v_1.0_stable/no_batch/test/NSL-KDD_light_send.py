@@ -73,7 +73,7 @@ def read_one_prediction(ser: serial.Serial, timeout_s=3.0):
     finally:
         ser.timeout = old_timeout
 
-# These arguments allow user to specify serial port, baudrate, input files, etc.
+# These arguments allow user to specify serial port, baudrate, input files, etc. 
 def main():
     ap = argparse.ArgumentParser(
         description="Send feature vectors from a text file over UART and check predictions."

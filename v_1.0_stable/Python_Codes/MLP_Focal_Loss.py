@@ -110,12 +110,11 @@ preprocessor = ColumnTransformer(
     ]
 )
 
-# Crucial Step: Fit the preprocessor ONLY on the training data, then transform both
+# Fit the preprocessor ONLY on the training data, then transform both
 X_train_processed = preprocessor.fit_transform(X_train)
 X_test_processed = preprocessor.transform(X_test)
 
-# FIX: Convert the sparse matrices to dense NumPy arrays immediately.
-# This prevents the AttributeError later in the sampling functions.
+# Convert sparse matrices to dense arrays for TensorFlow compatibility
 if hasattr(X_train_processed, 'toarray'):
     X_train_processed = X_train_processed.toarray()
 if hasattr(X_test_processed, 'toarray'):
@@ -168,7 +167,7 @@ def get_sample_vector(row_idx=None, class_name=None, class_instance=0):
     else:
         raise ValueError("You must specify either row_idx or class_name.")
 
-    # FIX: X_test_processed is now a dense array, so we don't need .toarray()
+    # X_test_processed is now a dense array, so we don't need .toarray()
     row_dense = X_test_processed[idx].flatten()
 
     print("\n// C-Style Input Vector")
@@ -182,7 +181,7 @@ def get_sample_vector(row_idx=None, class_name=None, class_instance=0):
     print(f"True label (encoded): {true_label_enc}")
     print(f"Label name: {true_label_name}")
 
-# Example usage: Extract and print one sample for each major class
+# Extract and print one sample for each major class
 print("\n" + "="*50)
 print("EXTRACTING SAMPLE INPUT VECTORS FOR C/VERILOG DEBUGGING")
 get_sample_vector(class_name="normal", class_instance=0)
@@ -198,7 +197,7 @@ def save_full_testset(X_test_processed, y_test_encoded,
     """Saves the full pre-processed test set into text files for hardware simulation."""
     with open(input_file, "w") as f_in, open(label_file, "w") as f_lab:
         for i in range(X_test_processed.shape[0]):
-            # FIX: X_test_processed is guaranteed dense here, so no .toarray() needed
+            # X_test_processed is guaranteed dense here, so no .toarray() needed
             row_dense = X_test_processed[i].flatten()
             row_str = ", ".join([f"{x:.6f}f" for x in row_dense])
             f_in.write("{ " + row_str + " };\n")
@@ -206,7 +205,7 @@ def save_full_testset(X_test_processed, y_test_encoded,
             # Write numerical label
             f_lab.write(f"{y_test_encoded[i]}\n")
 
-# Execute: Save the entire test set
+# Save the entire test set
 save_full_testset(X_test_processed, y_test_encoded)
 print("\nFull test set saved to inputs.txt and labels.txt.")
 
@@ -264,7 +263,7 @@ model.compile(
 )
 
 # Train the model
-# Using X_train_processed (which is now a dense NumPy array)
+# Using X_train_processed 
 history = model.fit(
     X_train_processed, y_train_cat,
     validation_split=0.1,

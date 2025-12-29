@@ -97,7 +97,7 @@ int model_infer(const float *x)
 // -------------------------------------------------------------
 int main() {
     // Hardcoded input for Class 0, this is for debugging. I have tried for all classes. You
-    // can change this input to test other classes as needed. Check the weights header. 
+    // can change this input to test other classes as needed. Check the weights header.  
     volatile float input[INPUT_DIM] = { 
         0.000000f, 1.000000f, 0.000000f, 0.000000f, 0.000000f, 
         0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 

@@ -1,14 +1,9 @@
-
 // ---- config: choose how your Dense weights are laid out ----
 #ifndef USE_KERAS_LAYOUT
 #define USE_KERAS_LAYOUT 1
 #endif
 
-// #include <math.h> /
-// #include <stdio.h>
-// #include <stdlib.h>
-#include "MLP_weightsBN_light.h" // Ağırlıklarınızı içeren dosya
-#define DEBUG_IF_ADDR 0x10008010 // Şimdilik kullanmıyorum
+#include "MLP_weightsBN_light.h" // Weights header
 
 #include "uart.h"
 #include "irq.h"
@@ -28,15 +23,15 @@ volatile float_bytes_t rx_var;
 
 uart uart0;
 
-// dims - LIGHTWEIGHT MODEL İÇİN GÜNCELLENDİ
+// dimensions
 #define INPUT_DIM 122
-#define L0_OUT    256 // Eskiden 512
-#define L1_OUT    128 // Eskiden 256
-#define L2_OUT    64  // Eskiden 128
-#define L3_OUT    32  // Yeni ara katman boyutu
-#define L4_OUT    5   // Çıkış katmanı boyutu
+#define L0_OUT    256 
+#define L1_OUT    128 
+#define L2_OUT    64 
+#define L3_OUT    32
+#define L4_OUT    5
 
-// ---- Approximate expf ve sqrtf fonksiyonları aynı kalır ----
+// ---- Approximate expf ve sqrtf functions ----
 float expf_approx(float x) {
 float result = 1.0f;
 float term = 1.0f;
@@ -74,8 +69,6 @@ extern const float bn2_gamma[L2_OUT], bn2_beta[L2_OUT], bn2_mean[L2_OUT], bn2_va
 extern const float bn3_gamma[L3_OUT], bn3_beta[L3_OUT], bn3_mean[L3_OUT], bn3_var[L3_OUT];
 extern const float bn0_eps, bn1_eps, bn2_eps, bn3_eps;
 
-
-// ---- Aktivasyon ve Çekirdek Fonksiyonları aynı kalır ----
 float relu(float x){ return x > 0.0f ? x : 0.0f; }
 void dense_affine(const float *x, int in_dim,
                          const float *w, const float *b,
@@ -183,8 +176,8 @@ int main() {
     SET_MTVEC_VECTOR_MODE();
     count = 0;
 
-    // 2. Define the hardcoded test vector (copied from your example)
-    // This is only used for the *first* test run at boot.
+    // 2. Define the hardcoded test vector
+    // This is only used for the first test run at boot.
     float input[INPUT_DIM] = { 0.000000f, 1.000000f, 0.000000f, 0.000000f, 
         0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 
         0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 0.000000f, 
@@ -228,8 +221,7 @@ int main() {
         }
         
         // At this point, IRQ is disabled (by the ISR) and count is 488
-        
-        // *** FIX: Run inference on the 'input_array' (filled by ISR) ***
+        // Run inference on the received input array
         result = model_infer(input_array);
         
         // Send the 1-byte prediction result back to Python
@@ -251,9 +243,8 @@ void exc_handler() {}
 void mei_handler() {}
 void msi_handler() {}
 
-/**
- This ISR is called for every byte received from the UART.
- */
+
+// This ISR is called for every byte received from the UART.
 void fast_irq0_handler()
 {
     // Read the byte from the UART's receive register
@@ -264,7 +255,6 @@ void fast_irq0_handler()
     rx_var.bytes[count % 4] = rx_byte;
 
     // Write the float to the global array
-    // (This writes 4 times, but the last write on bytes 3, 7, 11... is correct)
     input_array[count / 4] = rx_var.f;
 
     // Check if we are done
