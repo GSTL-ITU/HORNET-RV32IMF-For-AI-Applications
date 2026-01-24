@@ -53,7 +53,11 @@ This project presents the design and implementation of a lightweight, **RISC-V-b
 ### 1. RTL Simulation Flow
 Before going into the HIL flow, the design was tested on RTL Simulation using Vivado & XSim. The first verification topology is:
 
-![Verification Flow](./docs/Hornet_AI_Barebones.drawio.png)
+<div align="center">
+  <img src="./docs/Hornet_AI_FPGA_TOP.drawio.jpg" alt="Top Level Block Diagram" />
+</div>
+
+<br>
 
 ### 2. Hardware-in-the-Loop (HIL) Flow
 To ensure reliability, we developed a comprehensive verification suite. This flow validates the design by cross-referencing the Python Golden Model against both the RTL Simulation and the Physical FPGA output via UART, ensuring bit-accurate inference results. The second verification topology is:
