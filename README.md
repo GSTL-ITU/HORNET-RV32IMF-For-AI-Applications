@@ -54,7 +54,7 @@ This project presents the design and implementation of a lightweight, **RISC-V-b
 Before going into the HIL flow, the design was tested on RTL Simulation using Vivado & XSim. The first verification topology is:
 
 <div align="center">
-  <img src="./docs/Hornet_AI_FPGA_TOP.drawio.jpg" alt="Top Level Block Diagram" />
+  <img src="./docs/Hornet_AI_Barebones.drawio.png" alt="Verification Flow" />
 </div>
 
 <br>
