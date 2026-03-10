@@ -3,7 +3,7 @@
 ![Status](https://img.shields.io/badge/Status-Completed-success)
 ![Hardware](https://img.shields.io/badge/Target-Nexys%20Video%20(Artix--7)-blue)
 ![ISA](https://img.shields.io/badge/ISA-RV32IMF-orange)
-![Toolchain](https://img.shields.io/badge/Vivado-2025.1-red)
+![Toolchain](https://img.shields.io/badge/Vivado-2025.2-red)
 
 **A lightweight, RV32IMF RISC-V soft-core ("Hornet") implemented on FPGA for edge-based network intrusion detection using a custom C-based MLP inference engine.**
 
