@@ -5,7 +5,7 @@
 ![ISA](https://img.shields.io/badge/ISA-RV32IMF-orange)
 
 > ⚠️ **DEVELOPMENT STATUS: WORK IN PROGRESS** ⚠️  
-> **This directory is currently under active development.** The source files (`src/` directory) and documentation are frequently being updated. Future commits will include the hardware RTL sources, comprehensive logging, a dedicated driver for the accelerator, and extended test suites. 
+> **This directory is currently under active development.** The source files (`src/` directory) and documentation are frequently being updated. Future commits will include the completed RTL sources, logs, a dedicated driver for the accelerator, and extended test suites. 
 
 **Version 1.2 focuses on accelerating the C-based MLP inference engine by integrating a dedicated Hardware Accelerator onto the Wishbone bus.**
 
