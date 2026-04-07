@@ -1,48 +1,23 @@
-`timescale 1ns/1ps
-
-module fpga_top (
-    input  wire M100_clk_i,
-    input  wire rst_ni,
-    input  wire rx_i,
-    output wire tx_o,
-    output wire uart_debug_stb,
-    output wire led0,
-    output wire led1,
-    output wire led3,
-    output wire gpio_trigger_o
+module barebones_wb_top (
+    input  wire        clk_i,
+    input  wire        rst_ni,
+    input  wire        meip_i,
+    input  wire [15:0] fast_irq_i,
+    output wire        irq_ack_o
 );
 
     // -------------------------------------------------------------------------
     // Parameters
     // -------------------------------------------------------------------------
-    parameter SYS_CLK_FREQ = 20000000;
-    parameter NUM_SLAVES   = 7;
-    parameter MEMORY_INIT  = "memory_init.mem";
-    parameter RAM_DEPTH    = 120000;
+    parameter MEMORY_INIT  = "memory_init_tb.mem";
+    parameter RAM_DEPTH    = 2048;
+    parameter NUM_SLAVES   = 5;
+    parameter reset_vector = 32'h0000_0000; // Starting address for the PC
 
     // -------------------------------------------------------------------------
     // Internal Signals
     // -------------------------------------------------------------------------
-    wire tx_o_tmp;
-    wire loader_reset;
-    wire reset;
-    wire irq_ack_o;
     wire mtip;
-    wire rx_irq_o;
-    wire [7:0] rx_byte;
-
-    assign tx_o = tx_o_tmp;
-    assign reset = loader_reset & rst_ni;
-
-    // Clocking
-    wire clk_i, locked;
-
-    clk_wiz_0 clkwiz0 (
-        .clk_in1(M100_clk_i),
-        .reset(1'b0),
-        .locked(locked),
-        .clk_out1(clk_i)
-    );
 
     // Wishbone master interface signals for data
     wire        data_wb_cyc_o;
@@ -102,60 +77,43 @@ module fpga_top (
     assign slave_adr_begin[2] = 32'h1000_8000;
     assign slave_adr_end[2]   = 32'h1000_800F;
 
-    // Slave 3: UART
+    // Slave 3: Debug Interface
     assign slave_adr_begin[3] = 32'h1000_8010;
-    assign slave_adr_end[3]   = 32'h1000_8013;
-
-    // Slave 4: Loader
-    assign slave_adr_begin[4] = 32'h1000_8014;
-    assign slave_adr_end[4]   = 32'h1000_8014;
-
-    // Slave 5: GPIO
-    assign slave_adr_begin[5] = 32'h1000_8020;
-    assign slave_adr_end[5]   = 32'h1000_8023;
+    assign slave_adr_end[3]   = 32'h1000_8010;
     
-    // Slave 6: AI Accelerator
-    assign slave_adr_begin[6] = 32'h1000_9000;
-    assign slave_adr_end[6]   = 32'h1000_9224;
-
+    // Slave 4: AI Accelerator
+    assign slave_adr_begin[4] = 32'h1000_9000;
+    assign slave_adr_end[4]   = 32'h1000_9224;
+    
     // -------------------------------------------------------------------------
     // Crossbar / Interconnect Logic
     // -------------------------------------------------------------------------
-
+    
     // Instruction Bus to Slave 0 Mapping
-    assign wb_cyc_i[0]   = inst_wb_cyc_o;
-    assign wb_stb_i[0]   = inst_wb_stb_o;
-    assign wb_we_i[0]    = inst_wb_we_o;
-    assign wb_adr_i[0]   = inst_wb_adr_o;
-    assign wb_dat_i[0]   = inst_wb_dat_o;
-    assign wb_sel_i[0]   = inst_wb_sel_o;
-    assign wb_rst_i[0]   = ~reset;
-    assign wb_clk_i[0]   = clk_i;
+    assign wb_cyc_i[0] = inst_wb_cyc_o;
+    assign wb_stb_i[0] = inst_wb_stb_o && ((slave_adr_begin[0] <= wb_adr_i[0]) && (wb_adr_i[0] <= slave_adr_end[0])); 
+    assign wb_we_i[0]  = inst_wb_we_o;
+    assign wb_adr_i[0] = inst_wb_adr_o;
+    assign wb_dat_i[0] = inst_wb_dat_o;
+    assign wb_sel_i[0] = inst_wb_sel_o;
+    assign wb_rst_i[0] = ~rst_ni;
+    assign wb_clk_i[0] = clk_i;
     
     assign inst_wb_dat_i = wb_dat_o[0];
     assign inst_wb_err_i = wb_err_o[0];
-
-    // Debug assignments
-    assign uart_debug_stb = wb_stb_i[3];
 
     // Data Bus to Slaves 1 to (NUM_SLAVES-1) Mapping
     genvar i;
     generate
         for (i = 1; i < NUM_SLAVES; i = i + 1) begin : DATA_WB_MAP
             assign wb_cyc_i[i] = data_wb_cyc_o;
-            assign wb_stb_i[i] = data_wb_stb_o & ((slave_adr_begin[i] <= wb_adr_i[i]) && (wb_adr_i[i] <= slave_adr_end[i]));
+            assign wb_stb_i[i] = data_wb_stb_o && ((slave_adr_begin[i] <= wb_adr_i[i]) && (wb_adr_i[i] <= slave_adr_end[i]));
             assign wb_we_i[i]  = data_wb_we_o;
             assign wb_adr_i[i] = data_wb_adr_o;
             assign wb_dat_i[i] = data_wb_dat_o;
             assign wb_sel_i[i] = data_wb_sel_o;
+            assign wb_rst_i[i] = ~rst_ni;
             assign wb_clk_i[i] = clk_i;
-            
-            // Special reset condition for Loader (Slave 4)
-            if (i == 4) begin
-                assign wb_rst_i[i] = ~rst_ni;
-            end else begin
-                assign wb_rst_i[i] = ~reset;
-            end
         end
     endgenerate
 
@@ -173,7 +131,7 @@ module fpga_top (
     reg        r_data_wb_stall_i;
     reg        r_data_wb_ack_i;
     reg        slave_match;
-    integer     k;
+    integer    k;
 
     always @(*) begin
         // Default assignments to prevent latches
@@ -201,17 +159,23 @@ module fpga_top (
     assign data_wb_stall_i = r_data_wb_stall_i;
     assign data_wb_err_i   = r_data_wb_err_i;
     assign data_wb_clk_i   = clk_i;
-    assign data_wb_rst_i   = ~reset;
+    assign data_wb_rst_i   = ~rst_ni;
+
+    // -------------------------------------------------------------------------
+    // Tracer Signals
+    // -------------------------------------------------------------------------
+    wire [31:0] tr_mem_data, tr_mem_addr, tr_reg_data, tr_pc, tr_instr, fflags;
+    wire [ 4:0] tr_reg_addr;
+    wire [ 1:0] tr_mem_len;
+    wire        tr_valid, tr_store, tr_load, tr_is_float;
 
     // -------------------------------------------------------------------------
     // Module Instantiations
     // -------------------------------------------------------------------------
 
-    core_wb #(
-        .reset_vector(32'h0)
-    ) core0 (
+    core_wb #(.reset_vector(reset_vector)) core0 (
+        .rst_ni(rst_ni),
         .clk_i(clk_i),
-        .rst_ni(reset), // active-low reset
 
         // Wishbone interface for data memory
         .data_wb_cyc_o(data_wb_cyc_o),
@@ -238,11 +202,41 @@ module fpga_top (
         .inst_wb_err_i(inst_wb_err_i),
 
         // Interrupts
-        .meip_i(1'b0),
+        .meip_i(meip_i),
         .mtip_i(mtip),
         .msip_i(1'b0),
-        .fast_irq_i({15'b0, rx_irq_o}),
-        .irq_ack_o(irq_ack_o)
+        .fast_irq_i(fast_irq_i),
+        .irq_ack_o(irq_ack_o),        
+
+        // Tracer
+        .tr_mem_data(tr_mem_data),
+        .tr_mem_addr(tr_mem_addr),
+        .tr_reg_data(tr_reg_data),
+        .tr_pc(tr_pc),
+        .tr_instr(tr_instr),
+        .tr_reg_addr(tr_reg_addr),
+        .tr_mem_len(tr_mem_len),
+        .tr_valid(tr_valid),
+        .tr_load(tr_load),
+        .tr_store(tr_store),
+        .tr_is_float(tr_is_float),
+        .fflags(fflags)
+    );
+
+    tracer tracer_inst (
+        .clk_i(clk_i),
+        .valid(tr_valid),
+        .pc(tr_pc),
+        .instr(tr_instr),
+        .reg_addr(tr_reg_addr),
+        .reg_data(tr_reg_data),
+        .is_load(tr_load),
+        .is_store(tr_store),
+        .is_float(tr_is_float),
+        .mem_size(tr_mem_len),
+        .mem_addr(tr_mem_addr),
+        .mem_data(tr_mem_data),
+        .fpu_flags(fflags)
     );
 
     memory_2rw_wb #(
@@ -295,10 +289,7 @@ module fpga_top (
         .mtip_o(mtip)
     );
 
-    uart_wb #(
-        .SYS_CLK_FREQ(SYS_CLK_FREQ), 
-        .BAUD(115200)
-    ) uart0_inst (
+    debug_interface_wb debug_if_inst (
         .wb_cyc_i(wb_cyc_i[3]),
         .wb_stb_i(wb_stb_i[3]),
         .wb_we_i(wb_we_i[3]),
@@ -310,17 +301,10 @@ module fpga_top (
         .wb_dat_o(wb_dat_o[3]),
         .wb_err_o(wb_err_o[3]),
         .wb_rst_i(wb_rst_i[3]),
-        .wb_clk_i(wb_clk_i[3]),
-
-        .rx_i(rx_i),
-        .tx_o(tx_o_tmp),
-        .rx_byte_o(rx_byte),
-        .rx_irq_o(rx_irq_o)
+        .wb_clk_i(wb_clk_i[3])
     );
-
-    loader_wb #(
-        .SYS_CLK_FREQ(SYS_CLK_FREQ)
-    ) loader0_inst (
+    
+    wb_accelerator_wrapper acc_inst (
         .wb_cyc_i(wb_cyc_i[4]),
         .wb_stb_i(wb_stb_i[4]),
         .wb_we_i(wb_we_i[4]),
@@ -332,44 +316,7 @@ module fpga_top (
         .wb_dat_o(wb_dat_o[4]),
         .wb_err_o(wb_err_o[4]),
         .wb_rst_i(wb_rst_i[4]),
-        .wb_clk_i(wb_clk_i[4]),
-
-        .uart_rx_irq(rx_irq_o),
-        .uart_rx_byte(rx_byte),
-        .reset_o(loader_reset),
-        .led0(led0), 
-        .led1(led1), 
-        .led3(led3)
-    );
-
-    gpio_wb gpio_inst (
-        .wb_cyc_i(wb_cyc_i[5]),
-        .wb_stb_i(wb_stb_i[5]),
-        .wb_we_i(wb_we_i[5]),
-        .wb_adr_i(wb_adr_i[5]),
-        .wb_dat_i(wb_dat_i[5]),
-        .wb_sel_i(wb_sel_i[5]),
-        .wb_stall_o(wb_stall_o[5]),
-        .wb_ack_o(wb_ack_o[5]),
-        .wb_dat_o(wb_dat_o[5]),
-        .wb_err_o(wb_err_o[5]),
-        .wb_rst_i(wb_rst_i[5]),
-        .wb_clk_i(wb_clk_i[5]),
-        .trigger_o(gpio_trigger_o)
+        .wb_clk_i(wb_clk_i[4])
     );
     
-    wb_accelerator_wrapper acc_inst (
-        .wb_cyc_i(wb_cyc_i[6]),
-        .wb_stb_i(wb_stb_i[6]),
-        .wb_we_i(wb_we_i[6]),
-        .wb_adr_i(wb_adr_i[6]),
-        .wb_dat_i(wb_dat_i[6]),
-        .wb_sel_i(wb_sel_i[6]),
-        .wb_stall_o(wb_stall_o[6]),
-        .wb_ack_o(wb_ack_o[6]),
-        .wb_dat_o(wb_dat_o[6]),
-        .wb_err_o(wb_err_o[6]),
-        .wb_rst_i(wb_rst_i[6]),
-        .wb_clk_i(wb_clk_i[6])
-    );
 endmodule

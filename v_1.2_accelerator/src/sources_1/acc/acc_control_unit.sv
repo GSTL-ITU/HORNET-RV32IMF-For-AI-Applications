@@ -54,12 +54,13 @@ module acc_control_unit #(
         ST_CONFIG     = 4'b0001,
         ST_LOAD_INPUT = 4'b0011,
         ST_LAYER_INIT = 4'b0010,
+        ST_MAC        = 4'b1000,  
         ST_ADD_TREE   = 4'b0110,
         ST_BIAS_RELU  = 4'b0100,
         ST_WB         = 4'b0101,
         ST_CHECK      = 4'b0111,
         ST_DONE       = 4'b1111
-    } state_t; 
+    } state_t;
 
     // =========================================================
     // Registered State (_q) and Next State (_d) Declarations
@@ -75,7 +76,41 @@ module acc_control_unit #(
     // Latched configuration registers
     logic [31:0] layer_num_q, layer_num_d;
     logic [31:0] layer_params_q [8], layer_params_d [8];
-
+    
+    // PPRAM & MAC Helpers
+    logic [31:0] current_layer_q, current_layer_d;
+    
+    // How many neurons remain in this layer (counts DOWN)
+    // Loaded fresh when neuron_idx_q == 0, decremented in ST_CHECK
+    logic [31:0] neuron_cnt_q, neuron_cnt_d;
+    
+    // Which neuron we are computing within the layer (counts UP)
+    // Drives weight ROM offset calculation
+    logic [7:0]  neuron_idx_q, neuron_idx_d;
+    
+    // Weight ROM base address for neuron 0 of the current layer
+    // Accumulated across completed layers in ST_CHECK
+    logic [W_ROM_ADDR_WIDTH-1:0] w_rom_layer_base_q, w_rom_layer_base_d;
+    
+    // MAC chunk counter: which 32-weight chunk are we on (0 to macs_per_neuron-1)
+    // Reset here in LAYER_INIT, incremented in ST_MAC
+    logic [2:0] mac_chunk_cnt_q, mac_chunk_cnt_d;  // 3 bits covers up to 8 chunks (max 256 neurons per layer)
+    
+    // Input length feeding the current layer.
+    // Layer 0 reads the original input (INPUT_SIZE = 122).
+    // Layer N>0 reads the output of layer N-1 = layer_params_q[N-1].
+    logic [31:0] current_input_len;
+    assign current_input_len = (current_layer_q == '0)
+                               ? 32'(INPUT_SIZE)
+                               : layer_params_q[current_layer_q - 1];
+    
+    // How many 32-wide MAC chunks one neuron of this layer needs.
+    // ceil(input_len / 32) = (input_len + 31) >> 5
+    // Layer 0: (122 + 31) >> 5 = 153 >> 5 = 4  ✓
+    logic [31:0] macs_per_neuron;
+    assign macs_per_neuron = (current_input_len + 31) >> 5;
+        
+    
     // PPRAM write address pointers
     logic [PPR_ROW_ADDR_W-1:0] ppram_wr_row_addr_q, ppram_wr_row_addr_d;
     logic [PPR_COL_ADDR_W-1:0] ppram_wr_col_addr_q, ppram_wr_col_addr_d;
@@ -126,6 +161,7 @@ module acc_control_unit #(
             ppram_rd_addr_q     <= ppram_rd_addr_d;
             w_rom_rd_addr_q     <= w_rom_rd_addr_d;
             b_rom_rd_addr_q     <= b_rom_rd_addr_d;
+            current_layer_q     <= current_layer_d;
         end
     end
 
@@ -169,18 +205,6 @@ module acc_control_unit #(
         // ---------------------------------------------------------
         unique case (state_q)
 
-            // =====================================================
-            // ST_IDLE
-            // Wait for software to write 1 into the Start register
-            // (regfile index 0). We poll it every cycle.
-            //
-            // Timing note: acc_adr_o = 0 is driven combinationally
-            // here. The register file sees address 0 and presents
-            // regf_1[0] on acc_dat_i ONE cycle later (synchronous
-            // read). So we read acc_dat_i while still in IDLE -
-            // it carries last cycle's read of address 0, which is
-            // exactly the Start register. Correct.
-            // =====================================================
             ST_IDLE: begin
                 // Reset all configuration we may have stored previously
                 layer_num_d = '0;
@@ -202,28 +226,6 @@ module acc_control_unit #(
                 end
             end
 
-            // =====================================================
-            // ST_CONFIG
-            // Read layer_num (index 1), then layer_params[0..7]
-            // (indices 2..9) from the register file.
-            //
-            // Because the register file has 1-cycle read latency:
-            //   - Cycle N:   we drive acc_adr_o = X  
-            //   - Cycle N+1: acc_dat_i carries regf_1[X]
-            //
-            // So config_cnt_q represents "the data arriving NOW
-            // belongs to which parameter?":
-            //
-            //   config_cnt_q = 0 → acc_dat_i = layer_num  (addr 1 was pre-fetched in IDLE)
-            //   config_cnt_q = 1 → acc_dat_i = layer[0]   (addr 2 was driven when cnt=0)
-            //   ...
-            //   config_cnt_q = 8 → acc_dat_i = layer[7]   (addr 9 was driven when cnt=7)
-            //
-            // On the last valid capture (cnt==8), we also:
-            //   - Start routing the data bus through the PPRAM path
-            //   - Pre-fetch input[0] address (index 10)
-            //   - Transition to ST_LOAD_INPUT
-            // =====================================================
             ST_CONFIG: begin
                 // Drive the NEXT address to pre-fetch while we capture current data
                 // When cnt=0 we just captured layer_num, so drive addr for layer[0]
@@ -254,39 +256,19 @@ module acc_control_unit #(
                         demux_cu_or_ppram     = 1'b1;
                         ppram_ping_pong_sel_o = 1'b1;               // Write to bank A (sel=1 -> write A)
                         state_d               = ST_LOAD_INPUT;
+                        
+                        // Initialize layer tracking before entering the compute loop
+                        current_layer_d    = '0;
+                        neuron_idx_d       = '0;
+                        neuron_cnt_d       = '0;    // Loaded properly on first ST_LAYER_INIT entry
+                        w_rom_layer_base_d = '0;    // Layer 0 weights begin at ROM address 0
+                        mac_chunk_cnt_d    = '0;
                     end else begin
                         config_cnt_d = config_cnt_q + 1'b1;
                     end
                 end
             end
 
-            // =====================================================
-            // ST_LOAD_INPUT
-            // Write all INPUT_SIZE (122) input values into PPRAM
-            // bank B, row 0..3 (since 122 values / 32 words = 4
-            // rows with partial fill on the last row).
-            //
-            // Timing:
-            //   - acc_adr_o drives regfile address → data arrives
-            //     on acc_dat_i next cycle (1-cycle latency)
-            //   - ppram_wr_en_o is asserted the cycle AFTER the
-            //     address is presented, when valid data is on the
-            //     bus - which is exactly when we're in this state
-            //     after the first prefetch done at end of CONFIG.
-            //
-            // Address plan (regfile indices 10..131):
-            //   input_cnt_q = 0: addr=10 was pre-fetched → write input[0]
-            //   input_cnt_q = 1: addr=11 → write input[1]
-            //   ...
-            //   input_cnt_q = 121: addr=131 → write input[121]
-            //
-            // PPRAM address plan:
-            //   col advances 0→31, then wraps to 0 and row advances.
-            //   Row 0: inputs  0..31
-            //   Row 1: inputs 32..63
-            //   Row 2: inputs 64..95
-            //   Row 3: inputs 96..121 (cols 0..25, cols 26..31 are zero-padded in weights)
-            // =====================================================
             ST_LOAD_INPUT: begin
                 // Keep data path routed: regfile → PPRAM write port
                 demux_cu_or_ppram     = 1'b1;
@@ -320,11 +302,39 @@ module acc_control_unit #(
                     state_d             = ST_LAYER_INIT;
                 end
             end
-
+            
             ST_LAYER_INIT: begin
-                // To be implemented next
+                // Set ping-pong for the entire duration of this layer.
+                // Combinational - driven every cycle we are in this state.
+                ppram_ping_pong_sel_o = current_layer_q[0];
+            
+                // Load neuron count only on the first neuron of a layer.
+                // After that, ST_CHECK has already decremented it - we trust it.
+                if (neuron_idx_q == '0) begin
+                    neuron_cnt_d = layer_params_q[current_layer_q];
+                end
+            
+                // PPRAM read always restarts from row 0 for every neuron.
+                // This lands in ppram_rd_addr_q on the first ST_MAC cycle.
+                ppram_rd_addr_d = '0;
+            
+                // MAC chunk counter always restarts from 0.
+                mac_chunk_cnt_d = '0;
+            
+                // Compute the weight ROM start address for this neuron.
+                // Result lands in w_rom_rd_addr_q on the first ST_MAC cycle.
+                // ST_MAC cycle 1 presents this to the ROM → data arrives cycle 2.
+                w_rom_rd_addr_d = w_rom_layer_base_q
+                                + W_ROM_ADDR_WIDTH'(neuron_idx_q) * W_ROM_ADDR_WIDTH'(macs_per_neuron);
+            
+                // Unconditional one-cycle transition.
+                state_d = ST_MAC;
             end
-
+            
+            ST_MAC: begin
+            
+            end
+            
             ST_ADD_TREE: begin
                 // To be implemented next
             end
