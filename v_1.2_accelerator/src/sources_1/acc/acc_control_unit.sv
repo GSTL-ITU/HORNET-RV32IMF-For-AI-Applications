@@ -109,7 +109,12 @@ module acc_control_unit #(
     // Layer 0: (122 + 31) >> 5 = 153 >> 5 = 4  ✓
     logic [31:0] macs_per_neuron;
     assign macs_per_neuron = (current_input_len + 31) >> 5;
+    
+    // To keep MACs reset 
+    logic mac_valid_q, mac_valid_d;
         
+    // Adder Tree Helper
+    logic [2:0] adder_tree_cnt_q, adder_tree_cnt_d; 
     
     // PPRAM write address pointers
     logic [PPR_ROW_ADDR_W-1:0] ppram_wr_row_addr_q, ppram_wr_row_addr_d;
@@ -150,6 +155,12 @@ module acc_control_unit #(
             ppram_rd_addr_q     <= '0;
             w_rom_rd_addr_q     <= '0;
             b_rom_rd_addr_q     <= '0;
+            current_layer_q     <= '0;
+            w_rom_layer_base_q  <= '0;
+            neuron_idx_q        <= '0;
+            mac_chunk_cnt_q     <= '0;
+            adder_tree_cnt_q    <= '0;
+            mac_valid_q         <= '0;
         end else begin
             state_q             <= state_d;
             config_cnt_q        <= config_cnt_d;
@@ -162,6 +173,11 @@ module acc_control_unit #(
             w_rom_rd_addr_q     <= w_rom_rd_addr_d;
             b_rom_rd_addr_q     <= b_rom_rd_addr_d;
             current_layer_q     <= current_layer_d;
+            w_rom_layer_base_q  <= w_rom_layer_base_d;
+            neuron_idx_q        <= neuron_idx_d;
+            mac_chunk_cnt_q     <= mac_chunk_cnt_d;
+            adder_tree_cnt_q    <= adder_tree_cnt_d;
+            mac_valid_q         <= mac_valid_d;
         end
     end
 
@@ -185,7 +201,12 @@ module acc_control_unit #(
         ppram_rd_addr_d     = ppram_rd_addr_q;
         w_rom_rd_addr_d     = w_rom_rd_addr_q;
         b_rom_rd_addr_d     = b_rom_rd_addr_q;
-
+        current_layer_d     = current_layer_q;
+        w_rom_layer_base_d  = w_rom_layer_base_q;
+        neuron_idx_d        = neuron_idx_q;
+        mac_chunk_cnt_d     = mac_chunk_cnt_q;
+        adder_tree_cnt_d    = adder_tree_cnt_q;
+        mac_valid_d         = mac_valid_q;
         // ---------------------------------------------------------
         // Default: all pure combinational outputs are de-asserted.
         // ---------------------------------------------------------
@@ -320,7 +341,10 @@ module acc_control_unit #(
             
                 // MAC chunk counter always restarts from 0.
                 mac_chunk_cnt_d = '0;
-            
+                
+                // reset valid flag for new neuron
+                mac_valid_d     = 1'b0;   
+                
                 // Compute the weight ROM start address for this neuron.
                 // Result lands in w_rom_rd_addr_q on the first ST_MAC cycle.
                 // ST_MAC cycle 1 presents this to the ROM → data arrives cycle 2.
@@ -332,11 +356,40 @@ module acc_control_unit #(
             end
             
             ST_MAC: begin
-            
+                ppram_ping_pong_sel_o = current_layer_q[0];
+                
+                if (!mac_valid_q) begin
+                    macarr_last_o   = 1'b1;          // Zero C on next cycle ✓
+                    mac_valid_d     = 1'b1;          // Next cycle data is valid
+                    w_rom_rd_addr_d = w_rom_rd_addr_q + 1'b1;  // Pre-fetch chunk 1
+                    ppram_rd_addr_d = ppram_rd_addr_q + 1'b1;
+
+                end else begin
+                    if (mac_chunk_cnt_q == W_ROM_ADDR_WIDTH'(macs_per_neuron) - 1'b1) begin
+                        // Last chunk data is arriving at MAC this cycle.
+                        // Assert last so last_i_q resets C for next neuron.
+                        macarr_last_o = 1'b1;
+                        state_d       = ST_ADD_TREE;
+                    end else begin
+                        // More chunks to go - advance addresses and counter
+                        w_rom_rd_addr_d = w_rom_rd_addr_q + 1'b1;
+                        ppram_rd_addr_d = ppram_rd_addr_q  + 1'b1;
+                        mac_chunk_cnt_d = mac_chunk_cnt_q  + 1'b1;
+                    end
+                end
             end
             
             ST_ADD_TREE: begin
-                // To be implemented next
+                ppram_ping_pong_sel_o = current_layer_q[0];
+            
+                if (adder_tree_cnt_q == 3'd4) begin
+                    // Cycle 5 - data_o is valid at end of this cycle.
+                    // Transition so ST_BIAS_RELU sees it stable on cycle 1.
+                    adder_tree_cnt_d = '0;          // Reset for next neuron
+                    state_d          = ST_BIAS_RELU;
+                end else begin
+                    adder_tree_cnt_d = adder_tree_cnt_q + 1'b1;
+                end
             end
 
             ST_BIAS_RELU: begin
