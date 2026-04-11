@@ -95,6 +95,7 @@ module wb_accelerator_wrapper #(
     logic [(DATA_WIDTH*MAC_NUM)-1:0]    w_wrom_mac_data;
     
     // PPRAM Wires
+    logic                                       w_cu_pp_man_rst_ni;
     logic                                       w_cu_pp_bank_sel;
     logic                                       w_cu_pp_we;
     logic [$clog2(MAX_NEURONS / MAC_NUM)-1:0]   w_cu_pp_wr_row_addr;
@@ -103,8 +104,9 @@ module wb_accelerator_wrapper #(
     logic [(DATA_WIDTH * MAC_NUM)-1:0]          w_pp_mac_data;
     
     // MAC Array Wires
-    logic                               w_cu_mac_last;
     logic [(DATA_WIDTH * MAC_NUM)-1:0]  w_mac_add_data;
+    logic                               w_cu_mac_man_rst_ni;
+    logic                               w_cu_mac_en;
     
     // Adder Tree Wires
     logic [DATA_WIDTH-1:0]              w_add_addbias_data;
@@ -185,6 +187,7 @@ module wb_accelerator_wrapper #(
     .w_rom_rd_addr_o       (w_cu_wrom_addr),
     
     // PP-RAM Signals
+    .ppram_man_rst_ni_o    (w_cu_pp_man_rst_ni),
     .ppram_ping_pong_sel_o (w_cu_pp_bank_sel),
     .ppram_wr_en_o         (w_cu_pp_we),
     .ppram_wr_row_addr_o   (w_cu_pp_wr_row_addr),
@@ -192,7 +195,8 @@ module wb_accelerator_wrapper #(
     .ppram_rd_addr_o       (w_cu_pp_rd_addr),
     
     // MAC Array Signals
-    .macarr_last_o         (w_cu_mac_last),
+    .macarr_man_rst_ni         (w_cu_mac_man_rst_ni),
+    .macarr_en_i               (w_cu_mac_en),
     
     // Bias ROM Signals
     .b_rom_rd_addr_o       (w_cu_brom_addr),
@@ -254,6 +258,7 @@ module wb_accelerator_wrapper #(
         .COL_ADDR_W  ($clog2(MAC_NUM))
     ) u_pp_ram (
         .clk_i         (wb_clk_i),
+        .manual_rst_ni (w_cu_pp_man_rst_ni),
         .ping_pong_sel (w_cu_pp_bank_sel),
         
         // Write port
@@ -273,10 +278,12 @@ module wb_accelerator_wrapper #(
     mac_array u_mac_array (
         .clk_i          (wb_clk_i),
         .rst_ni         (wb_rst_ni),
-        .last_i         (w_cu_mac_last),
+        .manual_rst_ni  (w_cu_mac_man_rst_ni),
+        .en_i           (w_cu_mac_en),
         .weights_data_i (w_wrom_mac_data),
         .inputs_data_i  (w_pp_mac_data),
-        .outputs_data_o (w_mac_add_data)
+        .outputs_data_o (w_mac_add_data),
+        .rst_busy_o     ()
     );    
 
 // ---------------------------------------------------------

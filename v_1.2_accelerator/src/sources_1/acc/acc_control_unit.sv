@@ -28,13 +28,15 @@ module acc_control_unit #(
     
     output logic [W_ROM_ADDR_WIDTH-1:0] w_rom_rd_addr_o,
     
+    output logic                        ppram_man_rst_ni_o,
     output logic                        ppram_ping_pong_sel_o,
     output logic                        ppram_wr_en_o,
     output logic [PPR_ROW_ADDR_W-1:0]   ppram_wr_row_addr_o,
     output logic [PPR_COL_ADDR_W-1:0]   ppram_wr_col_addr_o,
     output logic [PPR_ROW_ADDR_W-1:0]   ppram_rd_addr_o,
         
-    output logic                        macarr_last_o,
+    output logic                        macarr_man_rst_ni,
+    output logic                        macarr_en_i,
     
     output logic [B_ROM_ADDR_WIDTH-1:0] b_rom_rd_addr_o,
     
@@ -70,7 +72,7 @@ module acc_control_unit #(
     logic [3:0]  config_cnt_q, config_cnt_d;
 
     // LOAD_INPUT state: tracks which of the 122 inputs we've written (0..121)
-    logic [6:0]  input_cnt_q, input_cnt_d;
+    logic [7:0]  input_cnt_q, input_cnt_d;
 
     // Latched configuration registers
     logic [31:0] layer_num_q, layer_num_d;
@@ -79,25 +81,22 @@ module acc_control_unit #(
     // PPRAM & MAC Helpers
     logic [31:0] current_layer_q, current_layer_d;
     
-    // How many neurons remain in this layer (counts DOWN)
     // Loaded fresh when neuron_idx_q == 0, decremented in ST_CHECK
     logic [31:0] neuron_cnt_q, neuron_cnt_d;
     
-    // Which neuron we are computing within the layer (counts UP)
     // Drives weight ROM offset calculation
     logic [7:0]  neuron_idx_q, neuron_idx_d;
     
-    // Weight ROM base address for neuron 0 of the current layer
-    // Accumulated across completed layers in ST_CHECK
+    // Weight ROM base address regs
     logic [W_ROM_ADDR_WIDTH-1:0] w_rom_layer_base_q, w_rom_layer_base_d;
     
-    // MAC chunk counter: which 32-weight chunk are we on (0 to macs_per_neuron-1)
-    // Reset here in LAYER_INIT, incremented in ST_MAC
+    // MAC chunk counter
     logic [2:0] mac_chunk_cnt_q, mac_chunk_cnt_d;  // 3 bits covers up to 8 chunks (max 256 neurons per layer)
     
-    // Input length feeding the current layer.
-    // Layer 0 reads the original input (INPUT_SIZE = 122).
-    // Layer N>0 reads the output of layer N-1 = layer_params_q[N-1].
+    logic mac_reset;
+    assign macarr_man_rst_ni = mac_reset && rst_ni;
+    
+    // Input length feeding the current layer
     logic [31:0] current_input_len;
     assign current_input_len = (current_layer_q == '0)
                                ? 32'(INPUT_SIZE)
@@ -110,7 +109,8 @@ module acc_control_unit #(
     assign macs_per_neuron = (current_input_len + 31) >> 5;
     
     // To keep MACs reset 
-    logic mac_valid_q, mac_valid_d;
+    logic macarr_en_i_q, macarr_en_i_d;
+    assign macarr_en_i = macarr_en_i_q;
         
     // Adder Tree Helper
     logic [2:0] adder_tree_cnt_q, adder_tree_cnt_d; 
@@ -119,7 +119,7 @@ module acc_control_unit #(
     logic [PPR_ROW_ADDR_W-1:0] ppram_wr_row_addr_q, ppram_wr_row_addr_d;
     logic [PPR_COL_ADDR_W-1:0] ppram_wr_col_addr_q, ppram_wr_col_addr_d;
 
-    // Read address (used in MAC states later)
+    // Read address
     logic [PPR_ROW_ADDR_W-1:0] ppram_rd_addr_q,     ppram_rd_addr_d;
 
     // ROM address pointers
@@ -127,8 +127,6 @@ module acc_control_unit #(
     logic [B_ROM_ADDR_WIDTH-1:0] b_rom_rd_addr_q,   b_rom_rd_addr_d;
     
     // BROM stage registers
-    // Bias ROM base address for neuron 0 of current layer
-    // Same accumulation pattern as w_rom_layer_base_q
     logic [B_ROM_ADDR_WIDTH-1:0] b_rom_layer_base_q, b_rom_layer_base_d;
     
     // ST_BIAS cycle counter: 0 = waiting for bias, 1 = adder computing
@@ -137,10 +135,6 @@ module acc_control_unit #(
     // =========================================================
     // Wire registered addresses to outputs
     // =========================================================
-    // These are registered outputs - driven from _q, not combinationally.
-    // This is a deliberate choice: address lines to memories are registered
-    // to reduce glitching and ease timing closure. The one-cycle latency
-    // cost is absorbed into the protocol for each memory.
     assign w_rom_rd_addr_o   = w_rom_rd_addr_q;
     assign ppram_wr_row_addr_o = ppram_wr_row_addr_q;
     assign ppram_wr_col_addr_o = ppram_wr_col_addr_q;
@@ -167,10 +161,10 @@ module acc_control_unit #(
             neuron_idx_q        <= '0;
             mac_chunk_cnt_q     <= '0;
             adder_tree_cnt_q    <= '0;
-            mac_valid_q         <= '0;
             b_rom_layer_base_q  <= '0;
             bias_cnt_q          <= '0;
             neuron_cnt_q        <= '0;
+            macarr_en_i_q       <= '0;
         end else begin
             state_q             <= state_d;
             config_cnt_q        <= config_cnt_d;
@@ -187,10 +181,10 @@ module acc_control_unit #(
             neuron_idx_q        <= neuron_idx_d;
             mac_chunk_cnt_q     <= mac_chunk_cnt_d;
             adder_tree_cnt_q    <= adder_tree_cnt_d;
-            mac_valid_q         <= mac_valid_d;
             b_rom_layer_base_q  <= b_rom_layer_base_d;
             bias_cnt_q          <= bias_cnt_d;
             neuron_cnt_q        <= neuron_cnt_d;
+            macarr_en_i_q       <= macarr_en_i_d;
         end
     end
 
@@ -198,12 +192,6 @@ module acc_control_unit #(
     // Combinational Block 
     // =========================================================
     always_comb begin
-
-        // ---------------------------------------------------------
-        // Default: all _d signals hold their current _q value.
-        // without defaults, any signal not
-        // assigned in a branch infers a latch in synthesis.
-        // ---------------------------------------------------------
         state_d             = state_q;
         config_cnt_d        = config_cnt_q;
         input_cnt_d         = input_cnt_q;
@@ -219,12 +207,10 @@ module acc_control_unit #(
         neuron_idx_d        = neuron_idx_q;
         mac_chunk_cnt_d     = mac_chunk_cnt_q;
         adder_tree_cnt_d    = adder_tree_cnt_q;
-        mac_valid_d         = mac_valid_q;
         b_rom_layer_base_d  = b_rom_layer_base_q;
         bias_cnt_d          = bias_cnt_q;
         neuron_cnt_d        = neuron_cnt_q;
-        // ---------------------------------------------------------
-        // Default: all pure combinational outputs are de-asserted.
+        macarr_en_i_d       = macarr_en_i_q;
         // ---------------------------------------------------------
         acc_we_o              = 1'b0;
         acc_dat_o             = '0;
@@ -235,7 +221,10 @@ module acc_control_unit #(
         demux_wb_out_sel      = 1'b0;
         ppram_ping_pong_sel_o = 1'b0;
         ppram_wr_en_o         = 1'b0;
-        macarr_last_o         = 1'b0;
+        macarr_man_rst_ni     = 1'b1;
+        mac_reset             = 1'b1;
+        ppram_man_rst_ni_o    = 1'b1;
+        
 
         // ---------------------------------------------------------
         // FSM
@@ -277,6 +266,7 @@ module acc_control_unit #(
 
                 // Capture the data that arrived this cycle
                 if (config_cnt_q == 4'd0) begin
+                    ppram_man_rst_ni_o = 1'b0;
                     layer_num_d  = acc_dat_i;                       // Latch layer_num
                     config_cnt_d = config_cnt_q + 1'b1;
                 end else if (config_cnt_q <= 4'd8) begin
@@ -337,6 +327,8 @@ module acc_control_unit #(
                     ppram_wr_col_addr_d = '0;
                     input_cnt_d         = '0;
                     state_d             = ST_LAYER_INIT;
+                    
+                    
                 end
             end
             
@@ -349,38 +341,27 @@ module acc_control_unit #(
                     neuron_cnt_d = layer_params_q[current_layer_q];
                 end
             
-                // PPRAM read always restarts from row 0 for every neuron.
+                // PPRAM read always restarts from row 0 for every neuron
                 ppram_rd_addr_d = '0;
             
-                // MAC chunk counter always restarts from 0.
+                // MAC chunk counter always restarts from 0
                 mac_chunk_cnt_d = '0;
                 
-                // reset valid flag for new neuron
-                mac_valid_d     = 1'b0;   
-                
+                // Addr calculator for each loop
                 w_rom_rd_addr_d = w_rom_layer_base_q
                                 + W_ROM_ADDR_WIDTH'(neuron_idx_q) * W_ROM_ADDR_WIDTH'(macs_per_neuron);
             
-                // Unconditional one-cycle transition.
+                
                 state_d = ST_MAC;
             end
             
             ST_MAC: begin
                 ppram_ping_pong_sel_o = current_layer_q[0];
+                macarr_en_i_d = 1;
                 
-                if (!mac_valid_q) begin
-                    macarr_last_o   = 1'b1;          // Zero C on next cycle ✓
-                    mac_valid_d     = 1'b1;          // Next cycle data is valid
-                    w_rom_rd_addr_d = w_rom_rd_addr_q + 1'b1;  // Pre-fetch chunk 1
-                    ppram_rd_addr_d = ppram_rd_addr_q + 1'b1;
-
-                end else begin
-                    if (mac_chunk_cnt_q == W_ROM_ADDR_WIDTH'(macs_per_neuron) - 1'b1) begin
-                        // Last chunk data is arriving at MAC this cycle
-                        // Assert last so last_i_q resets C for next neuron
+                if (mac_chunk_cnt_q == W_ROM_ADDR_WIDTH'(macs_per_neuron)) begin
                         mac_chunk_cnt_d = mac_chunk_cnt_q  + 1'b1;
-                        
-                        macarr_last_o = 1'b1;
+                        macarr_en_i_d = 0;
                         state_d       = ST_ADD_TREE;
                     end else begin
                         // More chunks to go - advance addresses and counter
@@ -388,7 +369,6 @@ module acc_control_unit #(
                         ppram_rd_addr_d = ppram_rd_addr_q  + 1'b1;
                         mac_chunk_cnt_d = mac_chunk_cnt_q  + 1'b1;
                     end
-                end
             end
             
             ST_ADD_TREE: begin
@@ -416,6 +396,10 @@ module acc_control_unit #(
                 end else begin
                     // Cycle 2: fp_adder result is valid at end of this
                     bias_cnt_d = 1'b0;
+                    
+                    ppram_wr_row_addr_d = {2'b00, neuron_idx_q[7:5]};
+                    ppram_wr_col_addr_d = {       neuron_idx_q[4:0]};
+        
                     state_d    = ST_WB;
                 end
             end
@@ -434,9 +418,6 @@ module acc_control_unit #(
                     ppram_ping_pong_sel_o = current_layer_q[0];         // Same sel, write goes to opposite bank
                     ppram_wr_en_o     = 1'b1;                           // Enable PPRAM write
                     
-                    // Write address from neuron index
-                    ppram_wr_row_addr_d = {2'b00, neuron_idx_q[7:5]};   // upper bits
-                    ppram_wr_col_addr_d = {      neuron_idx_q[4:0]};    // lower bits
                 end
             
                 // Always go to CHECK after one cycle
@@ -479,6 +460,10 @@ module acc_control_unit #(
                 acc_dat_o         = 32'd1;      // done = 1
                 mux_cu_or_wbdemux = 1'b0;       // CU drives regfile write port directly
                                                 // holds ST_DONE until reset
+                // We need 2 cycle reset for the MAC
+                // but triggering the signal for one cycle is enough
+                // since we have a mechanism inside the module
+                mac_reset = 1'b0;                                
             end
 
             default: state_d = ST_IDLE;
