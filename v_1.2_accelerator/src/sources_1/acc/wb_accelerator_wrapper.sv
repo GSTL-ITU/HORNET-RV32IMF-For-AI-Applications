@@ -23,7 +23,7 @@
 module wb_accelerator_wrapper #(
     parameter W_ROM_DEPTH   = 2373,
     parameter DATA_WIDTH    = 32,
-    parameter B_ROM_DEPTH   = 1200,
+    parameter B_ROM_DEPTH   = 485,
     parameter PPR_NUM_WORDS = 32,
     parameter MAX_NEURONS   = 256,
     parameter MAC_NUM       = 32,
@@ -310,8 +310,8 @@ module wb_accelerator_wrapper #(
 // Bias Adder Instantiation
 // ---------------------------------------------------------
 fp_adder add_bias (
-                .aclk                 (clk_i),
-                .aresetn              (rst_ni),
+                .aclk                 (wb_clk_i),
+                .aresetn              (wb_rst_ni),
                 .s_axis_a_tvalid      (1'b1),
                 .s_axis_a_tready      (), // Left unconnected
                 .s_axis_a_tdata       (w_add_addbias_data),
@@ -327,6 +327,7 @@ fp_adder add_bias (
 // ReLU Activation Instantiation
 // ---------------------------------------------------------
     relu_act u_relu_act (
+        .clk_i  (wb_clk_i),
         .data_i (w_addbias_relu_data),
         .data_o (w_relu_demuxWBOut_data)
     );

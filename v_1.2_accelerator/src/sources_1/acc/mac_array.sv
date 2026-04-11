@@ -53,9 +53,6 @@ module mac_array (
             weights[i] = weights_data_i[i*32 +: 32];
             inputs[i]  = inputs_data_i [i*32 +: 32];
 
-            // Use the DELAYED last signal to clear C.
-            // Cycle N   (last chunk):     c_in = mac_out  ← accumulate normally
-            // Cycle N+1 (first new chunk): c_in = 0       ← fresh start
             c_in[i] = last_i_q ? 32'h00000000 : mac_out[i];
 
             outputs_data_o[i*32 +: 32] = mac_out[i];
@@ -75,7 +72,6 @@ module mac_array (
                 .s_axis_a_tvalid      (1'b1),
                 .s_axis_a_tready      (),
                 .s_axis_a_tdata       (weights[i]),
-                .s_axis_a_tlast       (last_i),     // Pass through for IP bookkeeping
                 
                 .s_axis_b_tvalid      (1'b1),
                 .s_axis_b_tready      (),
@@ -87,8 +83,7 @@ module mac_array (
                 
                 .m_axis_result_tvalid (),
                 .m_axis_result_tready (1'b1),
-                .m_axis_result_tdata  (mac_out[i]),
-                .m_axis_result_tlast  ()
+                .m_axis_result_tdata  (mac_out[i])
             );
         end
     endgenerate

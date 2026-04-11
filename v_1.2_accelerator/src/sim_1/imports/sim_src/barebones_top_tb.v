@@ -21,6 +21,12 @@ always begin
     clk_i = 1'b0; #12.5; clk_i = 1'b1; #12.5;
 end
 
+always @(posedge clk_i) begin
+    if(uut.acc_inst.u_pp_ram.wr_en_i == 1'b1) begin
+        $display("BANK: %b;      Row: %h;          Col: %h;        Data: %h", uut.acc_inst.u_pp_ram.ping_pong_sel, uut.acc_inst.u_pp_ram.wr_row_addr_i, uut.acc_inst.u_pp_ram.wr_col_addr_i, uut.acc_inst.u_pp_ram.wr_data_i);
+    end
+end
+
 initial begin
     rst_ni = 1'b0; fast_irq_i = 16'b0; meip_i = 1'b0;
     

@@ -15,8 +15,7 @@ module acc_control_unit #(
     parameter B_ROM_DATA_WIDTH  = 32,
     parameter B_ROM_DEPTH       = 1200,
     parameter B_ROM_ADDR_WIDTH  = $clog2(B_ROM_DEPTH),
-
-    // Input vector size (max 122 values → indices 10..131)
+    
     parameter INPUT_SIZE        = 122
 )(
     input  logic                        clk_i,
@@ -56,7 +55,7 @@ module acc_control_unit #(
         ST_LAYER_INIT = 4'b0010,
         ST_MAC        = 4'b1000,  
         ST_ADD_TREE   = 4'b0110,
-        ST_BIAS_RELU  = 4'b0100,
+        ST_BIAS       = 4'b0100,
         ST_WB         = 4'b0101,
         ST_CHECK      = 4'b0111,
         ST_DONE       = 4'b1111
@@ -106,7 +105,7 @@ module acc_control_unit #(
     
     // How many 32-wide MAC chunks one neuron of this layer needs.
     // ceil(input_len / 32) = (input_len + 31) >> 5
-    // Layer 0: (122 + 31) >> 5 = 153 >> 5 = 4  ✓
+    // Layer 0: (122 + 31) >> 5 = 153 >> 5 = 4 
     logic [31:0] macs_per_neuron;
     assign macs_per_neuron = (current_input_len + 31) >> 5;
     
@@ -126,6 +125,14 @@ module acc_control_unit #(
     // ROM address pointers
     logic [W_ROM_ADDR_WIDTH-1:0] w_rom_rd_addr_q,   w_rom_rd_addr_d;
     logic [B_ROM_ADDR_WIDTH-1:0] b_rom_rd_addr_q,   b_rom_rd_addr_d;
+    
+    // BROM stage registers
+    // Bias ROM base address for neuron 0 of current layer
+    // Same accumulation pattern as w_rom_layer_base_q
+    logic [B_ROM_ADDR_WIDTH-1:0] b_rom_layer_base_q, b_rom_layer_base_d;
+    
+    // ST_BIAS cycle counter: 0 = waiting for bias, 1 = adder computing
+    logic bias_cnt_q, bias_cnt_d;  // 1 bit is enough, only 2 cycles
 
     // =========================================================
     // Wire registered addresses to outputs
@@ -161,6 +168,9 @@ module acc_control_unit #(
             mac_chunk_cnt_q     <= '0;
             adder_tree_cnt_q    <= '0;
             mac_valid_q         <= '0;
+            b_rom_layer_base_q  <= '0;
+            bias_cnt_q          <= '0;
+            neuron_cnt_q        <= '0;
         end else begin
             state_q             <= state_d;
             config_cnt_q        <= config_cnt_d;
@@ -178,6 +188,9 @@ module acc_control_unit #(
             mac_chunk_cnt_q     <= mac_chunk_cnt_d;
             adder_tree_cnt_q    <= adder_tree_cnt_d;
             mac_valid_q         <= mac_valid_d;
+            b_rom_layer_base_q  <= b_rom_layer_base_d;
+            bias_cnt_q          <= bias_cnt_d;
+            neuron_cnt_q        <= neuron_cnt_d;
         end
     end
 
@@ -207,6 +220,9 @@ module acc_control_unit #(
         mac_chunk_cnt_d     = mac_chunk_cnt_q;
         adder_tree_cnt_d    = adder_tree_cnt_q;
         mac_valid_d         = mac_valid_q;
+        b_rom_layer_base_d  = b_rom_layer_base_q;
+        bias_cnt_d          = bias_cnt_q;
+        neuron_cnt_d        = neuron_cnt_q;
         // ---------------------------------------------------------
         // Default: all pure combinational outputs are de-asserted.
         // ---------------------------------------------------------
@@ -326,17 +342,14 @@ module acc_control_unit #(
             
             ST_LAYER_INIT: begin
                 // Set ping-pong for the entire duration of this layer.
-                // Combinational - driven every cycle we are in this state.
+                // Combinational
                 ppram_ping_pong_sel_o = current_layer_q[0];
             
-                // Load neuron count only on the first neuron of a layer.
-                // After that, ST_CHECK has already decremented it - we trust it.
                 if (neuron_idx_q == '0) begin
                     neuron_cnt_d = layer_params_q[current_layer_q];
                 end
             
                 // PPRAM read always restarts from row 0 for every neuron.
-                // This lands in ppram_rd_addr_q on the first ST_MAC cycle.
                 ppram_rd_addr_d = '0;
             
                 // MAC chunk counter always restarts from 0.
@@ -345,9 +358,6 @@ module acc_control_unit #(
                 // reset valid flag for new neuron
                 mac_valid_d     = 1'b0;   
                 
-                // Compute the weight ROM start address for this neuron.
-                // Result lands in w_rom_rd_addr_q on the first ST_MAC cycle.
-                // ST_MAC cycle 1 presents this to the ROM → data arrives cycle 2.
                 w_rom_rd_addr_d = w_rom_layer_base_q
                                 + W_ROM_ADDR_WIDTH'(neuron_idx_q) * W_ROM_ADDR_WIDTH'(macs_per_neuron);
             
@@ -366,8 +376,10 @@ module acc_control_unit #(
 
                 end else begin
                     if (mac_chunk_cnt_q == W_ROM_ADDR_WIDTH'(macs_per_neuron) - 1'b1) begin
-                        // Last chunk data is arriving at MAC this cycle.
-                        // Assert last so last_i_q resets C for next neuron.
+                        // Last chunk data is arriving at MAC this cycle
+                        // Assert last so last_i_q resets C for next neuron
+                        mac_chunk_cnt_d = mac_chunk_cnt_q  + 1'b1;
+                        
                         macarr_last_o = 1'b1;
                         state_d       = ST_ADD_TREE;
                     end else begin
@@ -385,27 +397,88 @@ module acc_control_unit #(
                 if (adder_tree_cnt_q == 3'd4) begin
                     // Cycle 5 - data_o is valid at end of this cycle.
                     // Transition so ST_BIAS_RELU sees it stable on cycle 1.
-                    adder_tree_cnt_d = '0;          // Reset for next neuron
-                    state_d          = ST_BIAS_RELU;
+                    adder_tree_cnt_d = '0;                                  // Reset for next neuron
+                    b_rom_rd_addr_d  = b_rom_layer_base_q 
+                         + B_ROM_ADDR_WIDTH'(neuron_idx_q);
+                    state_d          = ST_BIAS;
                 end else begin
                     adder_tree_cnt_d = adder_tree_cnt_q + 1'b1;
                 end
             end
 
-            ST_BIAS_RELU: begin
-                // To be implemented next
+            ST_BIAS: begin
+                ppram_ping_pong_sel_o = current_layer_q[0];
+            
+                if (bias_cnt_q == 1'b0) begin
+                    // Cycle 1: bias ROM is reading
+                    bias_cnt_d = 1'b1;
+            
+                end else begin
+                    // Cycle 2: fp_adder result is valid at end of this
+                    bias_cnt_d = 1'b0;
+                    state_d    = ST_WB;
+                end
             end
 
             ST_WB: begin
-                // To be implemented next
+                if (current_layer_q == layer_num_q - 1) begin
+                    demux_wb_out_sel  = 1'b0;                           // ReLU to regfile path
+                    mux_cu_or_wbdemux = 1'b1;                           // Select wb_out into regfile
+                    acc_we_o          = 1'b1;                           // Enable regfile write
+                    acc_adr_o         = 32'd1 + {24'd0, neuron_idx_q};  // regf_2 index 1..N
+                    // mux_wb_in doesn't matter: not writing to PPRAM
+            
+                end else begin
+                    demux_wb_out_sel  = 1'b1;                           // ReLU to PPRAM path
+                    mux_wb_in_sel     = 1'b1;                           // Select wb_out (not regfile) into PPRAM
+                    ppram_ping_pong_sel_o = current_layer_q[0];         // Same sel, write goes to opposite bank
+                    ppram_wr_en_o     = 1'b1;                           // Enable PPRAM write
+                    
+                    // Write address from neuron index
+                    ppram_wr_row_addr_d = {2'b00, neuron_idx_q[7:5]};   // upper bits
+                    ppram_wr_col_addr_d = {      neuron_idx_q[4:0]};    // lower bits
+                end
+            
+                // Always go to CHECK after one cycle
+                state_d = ST_CHECK;
             end
 
             ST_CHECK: begin
-                // To be implemented next
+                if (neuron_cnt_q == 32'd1) begin
+                    w_rom_layer_base_d = w_rom_layer_base_q
+                                       + W_ROM_ADDR_WIDTH'(
+                                           layer_params_q[current_layer_q] * macs_per_neuron
+                                         );
+                    b_rom_layer_base_d = b_rom_layer_base_q
+                                       + B_ROM_ADDR_WIDTH'(
+                                           layer_params_q[current_layer_q]
+                                         );
+            
+                    // Reset neuron tracking for next layer
+                    neuron_idx_d = '0;
+                    neuron_cnt_d = '0;  // LAYER_INIT reloads this
+            
+                    if (current_layer_q == layer_num_q - 1) begin
+                        // All layers complete
+                        state_d = ST_DONE;
+                    end else begin
+                        current_layer_d = current_layer_q + 1'b1;
+                        state_d         = ST_LAYER_INIT;
+                    end
+            
+                end else begin
+                    neuron_cnt_d = neuron_cnt_q - 1'b1;
+                    neuron_idx_d = neuron_idx_q + 1'b1;
+                    state_d      = ST_LAYER_INIT;
+                end
             end
 
             ST_DONE: begin
-                // To be implemented next
+                acc_we_o          = 1'b1;
+                acc_adr_o         = 32'd0;      // regf_2[0] = done register
+                acc_dat_o         = 32'd1;      // done = 1
+                mux_cu_or_wbdemux = 1'b0;       // CU drives regfile write port directly
+                                                // holds ST_DONE until reset
             end
 
             default: state_d = ST_IDLE;

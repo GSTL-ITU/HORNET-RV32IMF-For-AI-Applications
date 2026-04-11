@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 module bias_rom #(
     parameter   DATA_WIDTH  = 32,
-    parameter   MEM_DEPTH   = 1200,
+    parameter   MEM_DEPTH   = 485,
     parameter   ADDR_WIDTH  = $clog2(MEM_DEPTH),
     parameter   MEMORY_INIT = "bias_init.mem"
 )(
