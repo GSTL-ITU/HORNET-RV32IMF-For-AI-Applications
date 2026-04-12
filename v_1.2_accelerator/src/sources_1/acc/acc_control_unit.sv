@@ -132,6 +132,7 @@ module acc_control_unit #(
     // FSM counters
     logic bias_cnt_q, bias_cnt_d;  
     logic wb_cnt_q, wb_cnt_d;
+    logic [5:0] done_cnt_q, done_cnt_d;
 
     // =========================================================
     // Wire registered addresses to outputs
@@ -167,6 +168,7 @@ module acc_control_unit #(
             neuron_cnt_q        <= '0;
             macarr_en_i_q       <= '0;
             wb_cnt_q            <= '0;
+            done_cnt_q          <= '0;
         end else begin
             state_q             <= state_d;
             config_cnt_q        <= config_cnt_d;
@@ -188,6 +190,7 @@ module acc_control_unit #(
             neuron_cnt_q        <= neuron_cnt_d;
             macarr_en_i_q       <= macarr_en_i_d;
             wb_cnt_q            <= wb_cnt_d;
+            done_cnt_q          <= done_cnt_d;
         end
     end
 
@@ -215,6 +218,7 @@ module acc_control_unit #(
         neuron_cnt_d        = neuron_cnt_q;
         macarr_en_i_d       = macarr_en_i_q;
         wb_cnt_d            = wb_cnt_q;
+        done_cnt_d          = done_cnt_q;
         // ---------------------------------------------------------
         acc_we_o              = 1'b0;
         acc_dat_o             = '0;
@@ -465,13 +469,27 @@ module acc_control_unit #(
             end
 
             ST_DONE: begin
-                acc_we_o          = 1'b1;
-                acc_adr_o         = 32'd0;      // regf_2[0] = done register
-                acc_dat_o         = 32'd1;      // done = 1
-                mux_cu_or_wbdemux = 1'b0;       // CU drives regfile write port directly
-                                                // holds ST_DONE until reset
+                mux_cu_or_wbdemux = 1'b0;           // CU drives regfile write port directly
+                mac_reset = 1'b0;    
                 
-                mac_reset = 1'b0;                                
+                if (done_cnt_q < 6'd62) begin
+                    acc_we_o   = 1'b1;              // Write                                
+                    acc_adr_o  = 32'd0;             // regf_2[0] = done register            
+                    acc_dat_o  = 32'd1;             // done = 1                             
+                    done_cnt_d = done_cnt_q + 1'b1;
+
+                end else if(done_cnt_q == 6'd62) begin
+                    acc_we_o   = 1'b1;
+                    acc_adr_o  = 32'd0;
+                    acc_dat_o  = 32'd0;             // After waiting 64 cycles, done goes zero
+                    done_cnt_d = done_cnt_q + 1'b1;
+                end else begin
+                    acc_we_o   = 1'b0;
+                    acc_adr_o  = 32'd0;
+                    acc_dat_o  = 32'd0; 
+                    done_cnt_d = '0;
+                    state_d    = ST_IDLE;
+                end                           
             end
 
             default: state_d = ST_IDLE;

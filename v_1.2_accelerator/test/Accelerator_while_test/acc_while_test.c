@@ -17,12 +17,11 @@
 
 #define INPUT_DIM 122
 #define NUM_LAYERS 5
-#define NUM_CLASSES 5 // Çıktı sınıf sayımız (0, 1, 2, 3, 4)
+#define NUM_CLASSES 5                  // (0, 1, 2, 3, 4)
 
 int main() {
-    // -------------------------------------------------------------------------
-    // 1. Data Initialization
-    // -------------------------------------------------------------------------
+    
+    // Data Initialization
     volatile float input[INPUT_DIM] = { 
         /* 
         // Class 0 Result
@@ -111,7 +110,7 @@ int main() {
     uint32_t layer_configs[8] = {256, 128, 64, 32, NUM_CLASSES, 0, 0, 0}; 
 
     // -------------------------------------------------------------------------
-    // 2. Write Parameters
+    // Write Parameters
     // -------------------------------------------------------------------------
     volatile uint32_t *layer_num_ptr = (volatile uint32_t *)ACCEL_LAYER_NUM_REG;
     volatile uint32_t *layer_ptr     = (volatile uint32_t *)ACCEL_LAYER_BASE;
@@ -123,7 +122,7 @@ int main() {
     }
 
     // -------------------------------------------------------------------------
-    // 3. Write Inputs 
+    // Write Inputs 
     // -------------------------------------------------------------------------
     volatile float *acc_input_ptr = (volatile float *)ACCEL_INPUT_BASE;
     
@@ -132,23 +131,25 @@ int main() {
     }
 
     // -------------------------------------------------------------------------
-    // 4. Start the Accelerator
+    // Start the Accelerator
     // -------------------------------------------------------------------------
     volatile uint32_t *start_ptr = (volatile uint32_t *)ACCEL_START_REG;
     *start_ptr = 1; 
 
     // -------------------------------------------------------------------------
-    // 5. Poll for Completion
+    // Poll for Completion
     // -------------------------------------------------------------------------
     volatile uint32_t *done_ptr = (volatile uint32_t *)ACCEL_DONE_REG;
     
     // Core will spin here until accelerator writes a non-zero value to rfile_2[0]
     while (*done_ptr == 0) {
-        // NOP eklenebilir
+        
     }
 
+    *start_ptr = 0;
+
     // -------------------------------------------------------------------------
-    // 6. Argmax (Single Precision Float Comparison)
+    // Argmax (Single Precision Float Comparison)
     // -------------------------------------------------------------------------
     volatile float *output_ptr = (volatile float *)ACCEL_OUTPUT_BASE;
     
@@ -164,12 +165,12 @@ int main() {
     }
 
     // -------------------------------------------------------------------------
-    // 7. Finish Testbench via Debug IF
+    // Finish Testbench via Debug IF
     // -------------------------------------------------------------------------
     volatile char *debug_ptr = (volatile char *)DEBUG_IF_ADDR;
     
-    // İşlemci testbench'in bitişi olarak doğrudan tespit ettiği sınıfı yazdırıyor
     *debug_ptr = best_class; 
 
+    *debug_ptr = 11;
     return 0;
 }

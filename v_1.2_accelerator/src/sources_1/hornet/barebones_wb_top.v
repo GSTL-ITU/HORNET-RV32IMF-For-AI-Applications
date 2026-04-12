@@ -10,7 +10,7 @@ module barebones_wb_top (
     // Parameters
     // -------------------------------------------------------------------------
     parameter MEMORY_INIT  = "memory_init_tb.mem";
-    parameter RAM_DEPTH    = 2048;
+    parameter RAM_DEPTH    = 120000;
     parameter NUM_SLAVES   = 5;
     parameter reset_vector = 32'h0000_0000; // Starting address for the PC
 
