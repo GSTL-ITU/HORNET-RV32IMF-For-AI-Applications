@@ -91,7 +91,7 @@ module acc_control_unit #(
     logic [W_ROM_ADDR_WIDTH-1:0] w_rom_layer_base_q, w_rom_layer_base_d;
     
     // MAC chunk counter
-    logic [2:0] mac_chunk_cnt_q, mac_chunk_cnt_d;  // 3 bits covers up to 8 chunks (max 256 neurons per layer)
+    logic [3:0] mac_chunk_cnt_q, mac_chunk_cnt_d; 
     
     logic mac_reset;
     assign macarr_man_rst_ni = mac_reset && rst_ni;
@@ -129,8 +129,9 @@ module acc_control_unit #(
     // BROM stage registers
     logic [B_ROM_ADDR_WIDTH-1:0] b_rom_layer_base_q, b_rom_layer_base_d;
     
-    // ST_BIAS cycle counter: 0 = waiting for bias, 1 = adder computing
-    logic bias_cnt_q, bias_cnt_d;  // 1 bit is enough, only 2 cycles
+    // FSM counters
+    logic bias_cnt_q, bias_cnt_d;  
+    logic wb_cnt_q, wb_cnt_d;
 
     // =========================================================
     // Wire registered addresses to outputs
@@ -165,6 +166,7 @@ module acc_control_unit #(
             bias_cnt_q          <= '0;
             neuron_cnt_q        <= '0;
             macarr_en_i_q       <= '0;
+            wb_cnt_q            <= '0;
         end else begin
             state_q             <= state_d;
             config_cnt_q        <= config_cnt_d;
@@ -185,6 +187,7 @@ module acc_control_unit #(
             bias_cnt_q          <= bias_cnt_d;
             neuron_cnt_q        <= neuron_cnt_d;
             macarr_en_i_q       <= macarr_en_i_d;
+            wb_cnt_q            <= wb_cnt_d;
         end
     end
 
@@ -211,6 +214,7 @@ module acc_control_unit #(
         bias_cnt_d          = bias_cnt_q;
         neuron_cnt_d        = neuron_cnt_q;
         macarr_en_i_d       = macarr_en_i_q;
+        wb_cnt_d            = wb_cnt_q;
         // ---------------------------------------------------------
         acc_we_o              = 1'b0;
         acc_dat_o             = '0;
@@ -381,6 +385,7 @@ module acc_control_unit #(
                     b_rom_rd_addr_d  = b_rom_layer_base_q 
                          + B_ROM_ADDR_WIDTH'(neuron_idx_q);
                     state_d          = ST_BIAS;
+                    mac_reset        = 1'b0;
                 end else begin
                     adder_tree_cnt_d = adder_tree_cnt_q + 1'b1;
                 end
@@ -405,23 +410,28 @@ module acc_control_unit #(
             end
 
             ST_WB: begin
-                if (current_layer_q == layer_num_q - 1) begin
-                    demux_wb_out_sel  = 1'b0;                           // ReLU to regfile path
-                    mux_cu_or_wbdemux = 1'b1;                           // Select wb_out into regfile
-                    acc_we_o          = 1'b1;                           // Enable regfile write
-                    acc_adr_o         = 32'd1 + {24'd0, neuron_idx_q};  // regf_2 index 1..N
-                    // mux_wb_in doesn't matter: not writing to PPRAM
-            
-                end else begin
-                    demux_wb_out_sel  = 1'b1;                           // ReLU to PPRAM path
-                    mux_wb_in_sel     = 1'b1;                           // Select wb_out (not regfile) into PPRAM
-                    ppram_ping_pong_sel_o = current_layer_q[0];         // Same sel, write goes to opposite bank
-                    ppram_wr_en_o     = 1'b1;                           // Enable PPRAM write
+                if(wb_cnt_q == 1'b0) wb_cnt_d = 1'b1;
+                else begin    
+                    wb_cnt_d = 1'b0;
                     
-                end
+                    if (current_layer_q == layer_num_q - 1) begin
+                        demux_wb_out_sel  = 1'b0;                           // ReLU to regfile path
+                        mux_cu_or_wbdemux = 1'b1;                           // Select wb_out into regfile
+                        acc_we_o          = 1'b1;                           // Enable regfile write
+                        acc_adr_o         = 32'd1 + {24'd0, neuron_idx_q};  // regf_2 index 1..N
+                        // mux_wb_in doesn't matter: not writing to PPRAM
             
-                // Always go to CHECK after one cycle
-                state_d = ST_CHECK;
+                    end else begin
+                        demux_wb_out_sel  = 1'b1;                           // ReLU to PPRAM path
+                        mux_wb_in_sel     = 1'b1;                           // Select wb_out (not regfile) into PPRAM
+                        ppram_ping_pong_sel_o = current_layer_q[0];         // Same sel, write goes to opposite bank
+                        ppram_wr_en_o     = 1'b1;                           // Enable PPRAM write
+                        
+                    end
+            
+                    // Always go to CHECK after one cycle
+                    state_d = ST_CHECK;
+                end    
             end
 
             ST_CHECK: begin
@@ -460,9 +470,7 @@ module acc_control_unit #(
                 acc_dat_o         = 32'd1;      // done = 1
                 mux_cu_or_wbdemux = 1'b0;       // CU drives regfile write port directly
                                                 // holds ST_DONE until reset
-                // We need 2 cycle reset for the MAC
-                // but triggering the signal for one cycle is enough
-                // since we have a mechanism inside the module
+                
                 mac_reset = 1'b0;                                
             end
 
