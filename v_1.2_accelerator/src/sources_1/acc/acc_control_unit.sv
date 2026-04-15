@@ -133,6 +133,7 @@ module acc_control_unit #(
     logic bias_cnt_q, bias_cnt_d;  
     logic wb_cnt_q, wb_cnt_d;
     logic [5:0] done_cnt_q, done_cnt_d;
+    logic mac_cnt_q, mac_cnt_d;
 
     // =========================================================
     // Wire registered addresses to outputs
@@ -169,6 +170,7 @@ module acc_control_unit #(
             macarr_en_i_q       <= '0;
             wb_cnt_q            <= '0;
             done_cnt_q          <= '0;
+            mac_cnt_q           <= '0;
         end else begin
             state_q             <= state_d;
             config_cnt_q        <= config_cnt_d;
@@ -191,6 +193,7 @@ module acc_control_unit #(
             macarr_en_i_q       <= macarr_en_i_d;
             wb_cnt_q            <= wb_cnt_d;
             done_cnt_q          <= done_cnt_d;
+            mac_cnt_q           <= mac_cnt_d;
         end
     end
 
@@ -219,6 +222,7 @@ module acc_control_unit #(
         macarr_en_i_d       = macarr_en_i_q;
         wb_cnt_d            = wb_cnt_q;
         done_cnt_d          = done_cnt_q;
+        mac_cnt_d           = mac_cnt_q;
         // ---------------------------------------------------------
         acc_we_o              = 1'b0;
         acc_dat_o             = '0;
@@ -229,7 +233,6 @@ module acc_control_unit #(
         demux_wb_out_sel      = 1'b0;
         ppram_ping_pong_sel_o = 1'b0;
         ppram_wr_en_o         = 1'b0;
-        macarr_man_rst_ni     = 1'b1;
         mac_reset             = 1'b1;
         ppram_man_rst_ni_o    = 1'b1;
         
@@ -365,9 +368,14 @@ module acc_control_unit #(
             
             ST_MAC: begin
                 ppram_ping_pong_sel_o = current_layer_q[0];
-                macarr_en_i_d = 1;
                 
-                if (mac_chunk_cnt_q == W_ROM_ADDR_WIDTH'(macs_per_neuron)) begin
+                if(mac_cnt_q == 1'b0) begin
+                    macarr_en_i_d = 1;
+                    mac_cnt_d     = 1'b1;
+                end else begin
+                    mac_cnt_d     = 1'b0;
+                    macarr_en_i_d = 0;
+                    if (mac_chunk_cnt_q == W_ROM_ADDR_WIDTH'(macs_per_neuron)) begin
                         mac_chunk_cnt_d = mac_chunk_cnt_q  + 1'b1;
                         macarr_en_i_d = 0;
                         state_d       = ST_ADD_TREE;
@@ -377,6 +385,7 @@ module acc_control_unit #(
                         ppram_rd_addr_d = ppram_rd_addr_q  + 1'b1;
                         mac_chunk_cnt_d = mac_chunk_cnt_q  + 1'b1;
                     end
+                end    
             end
             
             ST_ADD_TREE: begin

@@ -34,7 +34,7 @@ module adder_tree #(
     generate
         // STAGE 1: 32 inputs -> 16 outputs
         for (i = 0; i < 16; i++) begin : gen_stage1
-            fp_adder add_s1 (
+            (* DONT_TOUCH = "yes" *) fp_adder add_s1 (
                 .aclk                 (clk_i),
                 .aresetn              (rst_ni),
                 .s_axis_a_tvalid      (1'b1),

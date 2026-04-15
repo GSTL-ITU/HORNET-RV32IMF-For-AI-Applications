@@ -7,35 +7,40 @@ module mac_array (
     input  logic          en_i,            // Active-high enable. LOW freezes all MACs
     input  logic [1023:0] weights_data_i,
     input  logic [1023:0] inputs_data_i,
-    output logic [1023:0] outputs_data_o,
-    output logic          rst_busy_o       // HIGH while internal reset is being stretched
+    output logic [1023:0] outputs_data_o
 );
 
-    
-    logic rst_stretch_q [2];   // 2-stage shift register
-    logic aresetn_int;         // Combined reset to fp_mac instances
-    logic raw_rst;             // 1 = both inputs are de-asserted
-
-    assign raw_rst     = rst_ni & manual_rst_ni;  // Both active-low: AND = "all released"
+    logic rst_stretch_q [2];                    // 2-stage shift register
+    logic aresetn_int;
+    logic raw_rst;
+    assign raw_rst     = rst_ni & manual_rst_ni;
     assign aresetn_int = rst_stretch_q[0] & rst_stretch_q[1];
-    assign rst_busy_o  = ~aresetn_int;           // Busy while either stage is still 0
 
     // =========================================================
     // Array Declarations
     // =========================================================
     logic [31:0] weights [32];
     logic [31:0] inputs  [32];
-    logic [31:0] mac_out [32];
+    logic [31:0] mac_out_d [32];
+    logic [31:0] mac_out_q [32];
+    
+    logic [31:0] mac_valid;
     
     always_ff @(posedge clk_i) begin
         rst_stretch_q[1] <= raw_rst;
         rst_stretch_q[0] <= rst_stretch_q[1];
         
         if(!aresetn_int) begin
-            for(int i = 0; i<32; i++) mac_out[i] = '0;
+            for(int i = 0; i<32; i++) mac_out_q[i] <= '0;
+        end else begin
+            for(int i = 0; i<32; i++) begin
+                if (mac_valid[i]) begin
+                    mac_out_q[i] <= mac_out_d[i];
+                end
+            end
         end
     end
-    
+
     // =========================================================
     // Unpack / Pack - no c_in mux, no last_i, no feedback
     // =========================================================
@@ -43,11 +48,10 @@ module mac_array (
         for (int i = 0; i < 32; i++) begin
             weights[i] = weights_data_i[i*32 +: 32];
             inputs[i]  = inputs_data_i [i*32 +: 32];
-            outputs_data_o[i*32 +: 32] = mac_out[i];
+            outputs_data_o[i*32 +: 32] = mac_out_q[i];
         end
     end
 
-    
     genvar i;
     generate
         for (i = 0; i < 32; i++) begin : gen_mac
@@ -63,12 +67,11 @@ module mac_array (
                 .s_axis_b_tdata       (inputs[i]),
 
                 .s_axis_c_tvalid      (1'b1),
-                .s_axis_c_tdata       (mac_out[i]),
+                .s_axis_c_tdata       (mac_out_q[i]),
 
-                .m_axis_result_tvalid (),
-                .m_axis_result_tdata  (mac_out[i])
+                .m_axis_result_tvalid (mac_valid[i]),
+                .m_axis_result_tdata  (mac_out_d[i])
             );
         end
     endgenerate
-
 endmodule

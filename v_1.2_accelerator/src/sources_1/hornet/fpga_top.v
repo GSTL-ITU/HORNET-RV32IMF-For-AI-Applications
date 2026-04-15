@@ -18,7 +18,7 @@ module fpga_top (
     parameter SYS_CLK_FREQ = 20000000;
     parameter NUM_SLAVES   = 7;
     parameter MEMORY_INIT  = "memory_init.mem";
-    parameter RAM_DEPTH    = 2048;
+    parameter RAM_DEPTH    = 4096;
 
     // -------------------------------------------------------------------------
     // Internal Signals
@@ -245,7 +245,7 @@ module fpga_top (
         .irq_ack_o(irq_ack_o)
     );
 
-    memory_2rw_wb #(
+    (* DONT_TOUCH = "yes" *) memory_2rw_wb #(
         .RAM_DEPTH(RAM_DEPTH), 
         .MEMORY_INIT(MEMORY_INIT)
     ) memory_inst (

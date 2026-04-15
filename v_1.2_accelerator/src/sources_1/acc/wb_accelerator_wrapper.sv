@@ -282,8 +282,7 @@ module wb_accelerator_wrapper #(
         .en_i           (w_cu_mac_en),
         .weights_data_i (w_wrom_mac_data),
         .inputs_data_i  (w_pp_mac_data),
-        .outputs_data_o (w_mac_add_data),
-        .rst_busy_o     ()
+        .outputs_data_o (w_mac_add_data)
     );    
 
 // ---------------------------------------------------------
@@ -316,7 +315,7 @@ module wb_accelerator_wrapper #(
 // ---------------------------------------------------------
 // Bias Adder Instantiation
 // ---------------------------------------------------------
-fp_adder add_bias (
+            fp_adder add_bias (
                 .aclk                 (wb_clk_i),
                 .aresetn              (wb_rst_ni),
                 .s_axis_a_tvalid      (1'b1),
