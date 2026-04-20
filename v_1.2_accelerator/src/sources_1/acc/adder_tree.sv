@@ -34,17 +34,14 @@ module adder_tree #(
     generate
         // STAGE 1: 32 inputs -> 16 outputs
         for (i = 0; i < 16; i++) begin : gen_stage1
-            (* DONT_TOUCH = "yes" *) fp_adder add_s1 (
+            fp_adder add_s1 (
                 .aclk                 (clk_i),
                 .aresetn              (rst_ni),
                 .s_axis_a_tvalid      (1'b1),
-                .s_axis_a_tready      (), // Left unconnected
                 .s_axis_a_tdata       (stage0[2*i]),
                 .s_axis_b_tvalid      (1'b1),
-                .s_axis_b_tready      (), // Left unconnected
                 .s_axis_b_tdata       (stage0[2*i+1]),
                 .m_axis_result_tvalid (), // Left unconnected
-                .m_axis_result_tready (1'b1), 
                 .m_axis_result_tdata  (stage1[i])
             );
         end
@@ -55,13 +52,10 @@ module adder_tree #(
                 .aclk                 (clk_i),
                 .aresetn              (rst_ni),
                 .s_axis_a_tvalid      (1'b1),
-                .s_axis_a_tready      (), 
                 .s_axis_a_tdata       (stage1[2*i]),
                 .s_axis_b_tvalid      (1'b1),
-                .s_axis_b_tready      (), 
                 .s_axis_b_tdata       (stage1[2*i+1]),
                 .m_axis_result_tvalid (), 
-                .m_axis_result_tready (1'b1), 
                 .m_axis_result_tdata  (stage2[i])
             );
         end
@@ -72,13 +66,10 @@ module adder_tree #(
                 .aclk                 (clk_i),
                 .aresetn              (rst_ni),
                 .s_axis_a_tvalid      (1'b1),
-                .s_axis_a_tready      (), 
                 .s_axis_a_tdata       (stage2[2*i]),
                 .s_axis_b_tvalid      (1'b1),
-                .s_axis_b_tready      (), 
                 .s_axis_b_tdata       (stage2[2*i+1]),
                 .m_axis_result_tvalid (), 
-                .m_axis_result_tready (1'b1), 
                 .m_axis_result_tdata  (stage3[i])
             );
         end
@@ -89,13 +80,10 @@ module adder_tree #(
                 .aclk                 (clk_i),
                 .aresetn              (rst_ni),
                 .s_axis_a_tvalid      (1'b1),
-                .s_axis_a_tready      (), 
                 .s_axis_a_tdata       (stage3[2*i]),
                 .s_axis_b_tvalid      (1'b1),
-                .s_axis_b_tready      (), 
                 .s_axis_b_tdata       (stage3[2*i+1]),
                 .m_axis_result_tvalid (), 
-                .m_axis_result_tready (1'b1), 
                 .m_axis_result_tdata  (stage4[i])
             );
         end
@@ -105,13 +93,10 @@ module adder_tree #(
             .aclk                 (clk_i),
             .aresetn              (rst_ni),
             .s_axis_a_tvalid      (1'b1),
-            .s_axis_a_tready      (), 
             .s_axis_a_tdata       (stage4[0]),
             .s_axis_b_tvalid      (1'b1),
-            .s_axis_b_tready      (), 
             .s_axis_b_tdata       (stage4[1]),
             .m_axis_result_tvalid (), 
-            .m_axis_result_tready (1'b1), 
             .m_axis_result_tdata  (data_o)
         );
     endgenerate

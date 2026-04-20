@@ -319,13 +319,10 @@ module wb_accelerator_wrapper #(
                 .aclk                 (wb_clk_i),
                 .aresetn              (wb_rst_ni),
                 .s_axis_a_tvalid      (1'b1),
-                .s_axis_a_tready      (), // Left unconnected
                 .s_axis_a_tdata       (w_add_addbias_data),
                 .s_axis_b_tvalid      (1'b1),
-                .s_axis_b_tready      (), // Left unconnected
                 .s_axis_b_tdata       (w_brom_addbias_data),
                 .m_axis_result_tvalid (), // Left unconnected
-                .m_axis_result_tready (1'b1), 
                 .m_axis_result_tdata  (w_addbias_relu_data)
             );
 

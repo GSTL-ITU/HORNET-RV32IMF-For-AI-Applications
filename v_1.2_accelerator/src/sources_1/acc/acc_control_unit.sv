@@ -497,6 +497,7 @@ module acc_control_unit #(
                     acc_adr_o  = 32'd0;
                     acc_dat_o  = 32'd0; 
                     done_cnt_d = '0;
+                    b_rom_layer_base_d = '0;
                     state_d    = ST_IDLE;
                 end                           
             end

@@ -102,8 +102,8 @@ int model_infer(const float *x) {
     for (int i = 0; i < L3_OUT; ++i) z3[i] = relu(z3[i]);
 
     // --- Layer 4: Output Dense + Softmax ---
-    dense_affine(z3, L3_OUT, layer4_weights, layer4_biases, L4_OUT, logits);
-    softmax_stable(logits, L4_OUT, out_probs);
+    dense_affine(z3, L3_OUT, layer4_weights, layer4_biases, L4_OUT, out_probs);
+    // softmax_stable(logits, L4_OUT, out_probs);
 
     // Argmax
     int predicted = 0;
