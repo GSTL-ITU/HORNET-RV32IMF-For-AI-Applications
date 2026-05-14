@@ -44,7 +44,7 @@ begin
 				$finish();
 			end
 			else begin
-				$display("Non-determined data: %d\n",wb_dat_i[31:0]); //We can output text to the terminal with this
+				$display("Non-determined data: %d\t, time: %t \n",wb_dat_i[31:0], $time); //We can output text to the terminal with this
 				// $finish();
 		    end
 		end    
